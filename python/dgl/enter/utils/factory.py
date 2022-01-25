@@ -10,6 +10,7 @@ from pydantic import create_model_from_typeddict, create_model, Field
 from ...data import CoraGraphDataset, CiteseerGraphDataset, RedditDataset, DGLCSVDataset
 from ...dataloading.negative_sampler import GlobalUniform, PerSourceUniform
 import inspect
+from numpydoc import docscrape
 logger = logging.getLogger(__name__)
 
 
@@ -35,10 +36,15 @@ class PipelineBase(ABC):
 class DataFactory:
     registry = {}
     cname_registry = {}
+    pipeline_allowed = {
+        "nodepred": {},
+        "nodepred-ns": {},
+        "edgepred": {},
+    }
 
     @classmethod
-    def register(cls, name: str, import_code, class_name, extra_args={}) -> Callable:
-        out= {
+    def register(cls, name: str, import_code, class_name, allowed_pipeline, extra_args={}) -> Callable:
+        out = {
             "name": name,
             "import_code": import_code,
             "class_name": class_name,
@@ -89,6 +95,10 @@ class DataFactory:
         return cls.registry[name]["import_code"]
 
     @classmethod
+    def get_import_code(cls, name):
+        return cls.registry[name]["import_code"]
+
+    @classmethod
     def get_extra_args(cls, name):
         return cls.registry[name]["extra_args"]
 
@@ -107,11 +117,21 @@ class DataFactory:
         d["data_initialize_code"] = data_initialize_code
         return d
 
-DataFactory.register("cora", import_code="from dgl.data import CoraGraphDataset", class_name="CoraGraphDataset()")
-DataFactory.register("citeseer", import_code="from dgl.data import CiteseerGraphDataset", class_name="CiteseerGraphDataset()")
-DataFactory.register("ogbl-collab", import_code="from ogb.linkproppred import DglLinkPropPredDataset", extra_args={}, class_name="DglLinkPropPredDataset('ogbl-collab')")
-DataFactory.register("csv", import_code="from dgl.data import DGLCSVDataset", extra_args={ "data_path": "./"}, class_name="DGLCSVDataset({})")
-DataFactory.register("reddit", import_code="from dgl.data import RedditDataset", class_name="RedditDataset()")
+
+ALL_PIPELINE = ["nodepred", "nodepred-ns", "edgepred"]
+
+DataFactory.register(
+    "cora", import_code="from dgl.data import CoraGraphDataset", class_name="CoraGraphDataset()", allowed_pipeline=["nodepred", "nodepred-ns", "edgepred"])
+DataFactory.register("citeseer", import_code="from dgl.data import CiteseerGraphDataset",
+                     class_name="CiteseerGraphDataset()", allowed_pipeline=["nodepred", "nodepred-ns", "edgepred"])
+DataFactory.register("ogbl-collab", import_code="from ogb.linkproppred import DglLinkPropPredDataset",
+                     extra_args={}, class_name="DglLinkPropPredDataset('ogbl-collab')", allowed_pipeline=["edgepred"])
+DataFactory.register("csv", import_code="from dgl.data import DGLCSVDataset", extra_args={
+                     "data_path": "./"}, class_name="DGLCSVDataset({})", allowed_pipeline=["nodepred", "nodepred-ns", "edgepred"])
+DataFactory.register(
+    "reddit", import_code="from dgl.data import RedditDataset", class_name="RedditDataset()", allowed_pipeline=["nodepred", "nodepred-ns", "edgepred"])
+DataFactory.register("co-buy-computer", import_code="from dgl.data import AmazonCoBuyComputerDataset",
+                     class_name="AmazonCoBuyComputerDataset()", allowed_pipeline=["nodepred", "nodepred-ns", "edgepred"])
 
 
 class PipelineFactory:
@@ -214,6 +234,15 @@ class ModelFactory:
             name: Literal[model_name]
         return create_model(f'{model_name.upper()}ModelConfig', **type_annotation_dict, __base__=Base)
 
+    def get_constructor_doc_dict(self, name):
+        model_class = self.registry[name]
+        docs = inspect.getdoc(model_class.__init__)
+        param_docs = docscrape.NumpyDocString(docs)
+        param_docs_dict = {}
+        for param in param_docs["Parameters"]:
+            param_docs_dict[param.name] = param.desc[0]
+        return param_docs_dict
+
     def get_pydantic_model_config(self):
         model_list = []
         for k in self.registry:
@@ -232,7 +261,6 @@ class ModelFactory:
         for k, param in dict(sigs.parameters).items():
             type_annotation_dict[k] = param.annotation
         return type_annotation_dict
-
 
 
 class SamplerFactory:
@@ -300,6 +328,14 @@ class SamplerFactory:
             type_annotation_dict[k] = param.annotation
         return type_annotation_dict
 
+    def get_constructor_doc_dict(self, name):
+        model_class = self.registry[name]
+        docs = inspect.getdoc(model_class)
+        param_docs = docscrape.NumpyDocString(docs)
+        param_docs_dict = {}
+        for param in param_docs["Parameters"]:
+            param_docs_dict[param.name] = param.desc[0]
+        return param_docs_dict
 
 
 NegativeSamplerFactory = SamplerFactory()

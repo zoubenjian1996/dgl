@@ -7,20 +7,9 @@ from typing import Optional
 import yaml
 from ...utils.factory import PipelineFactory, NodeModelFactory, PipelineBase, DataFactory
 from ...utils.base_model import EarlyStopConfig, DeviceEnum
-from ...utils.yaml_dump import deep_convert_dict, merge_comment
+from ...utils.yaml_dump import deep_convert_dict
 import ruamel.yaml
 from ruamel.yaml.comments import CommentedMap
-
-
-pipeline_comments = {
-    "node_embed_size": "The node learnable embedding size, -1 to disable",
-    "num_epochs": "Number of training epochs",
-    "eval_period": "Interval epochs between evaluations",
-    "early_stop": {
-        "patience": "Steps before early stop",
-        "checkpoint_path": "Early stop checkpoint model file path"
-    }
-}
 
 class NodepredPipelineCfg(BaseModel):
     node_embed_size: Optional[int] = -1
@@ -68,16 +57,13 @@ class NodepredPipeline(PipelineBase):
                 "general_pipeline": NodepredPipelineCfg()
             }
             output_cfg = self.user_cfg_cls(**generated_cfg).dict()
-            output_cfg = deep_convert_dict(output_cfg)
-            comment_dict = {
-                "general_pipeline": pipeline_comments,
-                "model": NodeModelFactory.get_constructor_doc_dict(model.value)
-            }
-            comment_dict = merge_comment(output_cfg, comment_dict)
+            comment_dict = deep_convert_dict(output_cfg)
+            doc_dict = NodeModelFactory.get_constructor_doc_dict(model.value)
+            for k, v in doc_dict.items():
+                comment_dict["model"].yaml_add_eol_comment(v, key=k, column=30)
 
             yaml = ruamel.yaml.YAML()
             yaml.dump(comment_dict, Path(cfg).open("w"))
-            print("Configuration file is generated at {}".format(Path(cfg).absolute()))
 
         return config
 
